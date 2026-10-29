@@ -1,0 +1,21 @@
+name = "nchxa-hub"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# Cả 2 tên miền cùng chạy trong 1 Worker: landing page + trang rút gọn link
+routes = [
+  { pattern = "nchxa.cyou", custom_domain = true },
+  { pattern = "go.nchxa.cyou", custom_domain = true },
+]
+
+[vars]
+SHORT_HOST = "go.nchxa.cyou"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true
+
+# Không cần điền id: Wrangler tự tạo KV Namespace ở lần deploy đầu tiên
+[[kv_namespaces]]
+binding = "LINKS"
