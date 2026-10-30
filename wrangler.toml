@@ -16,3 +16,9 @@ run_worker_first = true
 # Không cần điền id: Wrangler tự tạo KV Namespace ở lần deploy đầu tiên
 [[kv_namespaces]]
 binding = "LINKS"
+
+# Giới hạn số link tạo từ 1IP trong 1 phút là 10
+[[ratelimits]]
+name = "LIMITER"
+namespace_id = "1001"
+simple = { limit = 10, period = 60 }
