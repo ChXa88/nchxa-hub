@@ -2,14 +2,11 @@ name = "nchxa-hub"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
 
-# Cả 2 tên miền cùng chạy trong 1 Worker: landing page + trang rút gọn link
-routes = [
-  { pattern = "nchxa.cyou", custom_domain = true },
-  { pattern = "go.nchxa.cyou", custom_domain = true },
-]
+# 1 Worker phục vụ toàn bộ nchxa.cyou: landing page (/), trang quản lý (/admin/) và link rút gọn (/<alias>)
+routes = [{ pattern = "nchxa.cyou", custom_domain = true }]
 
 [vars]
-SHORT_HOST = "go.nchxa.cyou"
+SHORT_HOST = "nchxa.cyou"
 
 [assets]
 directory = "./public"

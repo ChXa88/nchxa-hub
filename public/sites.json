@@ -1,5 +1,5 @@
 [
   { "name": "IELTS Vocab", "desc": "Học và ôn từ vựng IELTS theo chủ đề.", "url": "https://vocab.nchxa.cyou/", "mono": "IV", "color": "#E8590C", "tags": ["IELTS", "Từ vựng"] },
   { "name": "HTML Lab", "desc": "Học HTML cơ bản bằng cách tự tay viết code.", "url": "https://html.nchxa.cyou/", "mono": "</>", "color": "#1C7ED6", "tags": ["HTML", "Lập trình"] },
-  { "name": "Rút gọn link", "desc": "Biến link dài thành link ngắn để gửi bạn bè, kèm mã QR.", "url": "https://go.nchxa.cyou/admin/", "mono": "go", "color": "#7048E8", "tags": ["Công cụ"] }
+  { "name": "Rút gọn link", "desc": "Biến link dài thành link ngắn để gửi bạn bè, kèm mã QR.", "url": "/admin/", "mono": "go", "color": "#7048E8", "tags": ["Công cụ"] }
 ]

@@ -2,17 +2,15 @@ const RESERVED = new Set(["admin", "api"]);
 const ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const enc = new TextEncoder();
 const J = (d, s = 200, h = {}) => Response.json(d, { status: s, headers: h });
-const NOT_FOUND = `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>Không tìm thấy link</title><body style="font:16px system-ui;display:grid;place-items:center;min-height:100vh;margin:0;color:#12182B;background:#EDF0F7"><div style="text-align:center"><h1 style="font-size:56px;margin:0">404</h1><p>Link này không tồn tại, đã bị tắt hoặc đã hết hạn.</p><a href="https://nchxa.cyou" style="color:#3B3FEF">Về trang chủ</a></div>`;
+const NOT_FOUND = `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>Không tìm thấy link</title><body style="font:16px system-ui;display:grid;place-items:center;min-height:100vh;margin:0;color:#12182B;background:#EDF0F7"><div style="text-align:center"><h1 style="font-size:56px;margin:0">404</h1><p>Link này không tồn tại, đã bị tắt hoặc đã hết hạn.</p><a href="/" style="color:#3B3FEF">Về trang chủ</a></div>`;
 
 export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url), p = url.pathname;
     try {
       if (p.startsWith("/api/")) return await api(req, env, url);
-      if (url.hostname !== env.SHORT_HOST) return env.ASSETS.fetch(req); // landing page
-      if (p === "/") return Response.redirect(url.origin + "/admin/", 302);
-      if (p.startsWith("/admin") || p.includes(".")) return env.ASSETS.fetch(req); // trang quản lý + file tĩnh
-      return await go(decodeURIComponent(p.slice(1)), env, ctx); // link rút gọn
+      if (p === "/" || p.startsWith("/admin") || p.includes(".")) return env.ASSETS.fetch(req); // landing, trang quản lý, file tĩnh
+      return await go(decodeURIComponent(p.slice(1).replace(/\/+$/, "")), env, ctx); // nchxa.cyou/<alias>
     } catch {
       return J({ error: "Lỗi máy chủ" }, 500);
     }
@@ -42,6 +40,21 @@ const save = (env, slug, r) =>
 /* ---------- API quản lý ---------- */
 async function api(req, env, url) {
   const m = req.method, p = url.pathname.slice(5);
+
+  /* Tạo link công khai: không cần mật khẩu, chỉ nhận link đích, alias luôn ngẫu nhiên */
+  if (p === "shorten" && m === "POST") {
+    if (env.LIMITER && !(await env.LIMITER.limit({ key: req.headers.get("CF-Connecting-IP") || "x" })).success)
+      return J({ error: "Bạn tạo link hơi nhanh, hãy thử lại sau ít phút" }, 429);
+    const b = await req.json().catch(() => ({}));
+    const r = { url: "", title: "", on: true, exp: null, c: 0, at: Date.now(), pub: 1 };
+    const err = fill({ url: b.url }, r, env.SHORT_HOST, true);
+    if (err) return J({ error: err }, 400);
+    const slug = await freeSlug(env);
+    if (!slug) return J({ error: "Không tạo được link, hãy thử lại" }, 500);
+    await save(env, slug, r);
+    return J({ slug, ...r }, 201);
+  }
+
   if (!env.ADMIN_PASSWORD) return J({ error: "Chưa đặt secret ADMIN_PASSWORD trên Cloudflare." }, 500);
 
   if (p === "login" && m === "POST") {
@@ -78,13 +91,7 @@ async function api(req, env, url) {
       if (!/^[\w-]{2,40}$/.test(slug) || RESERVED.has(slug.toLowerCase()))
         return J({ error: "Alias chỉ gồm chữ, số, - và _ (2–40 ký tự)" }, 400);
       if (await env.LINKS.get("l:" + slug)) return J({ error: "Alias này đã được dùng" }, 409);
-    } else {
-      for (let i = 0; i < 5 && !slug; i++) {
-        const s = Array.from(crypto.getRandomValues(new Uint8Array(6)), (x) => ALPHABET[x % 62]).join("");
-        if (!(await env.LINKS.get("l:" + s))) slug = s;
-      }
-      if (!slug) return J({ error: "Không tạo được slug, hãy thử lại" }, 500);
-    }
+    } else if (!(slug = await freeSlug(env))) return J({ error: "Không tạo được slug, hãy thử lại" }, 500);
     await save(env, slug, r);
     return J({ slug, ...r }, 201);
   }
@@ -105,10 +112,19 @@ async function api(req, env, url) {
   return J({ error: "Not found" }, 404);
 }
 
+async function freeSlug(env) {
+  for (let i = 0; i < 5; i++) {
+    const s = Array.from(crypto.getRandomValues(new Uint8Array(6)), (x) => ALPHABET[x % 62]).join("");
+    if (!(await env.LINKS.get("l:" + s))) return s;
+  }
+}
+
 /* ---------- Kiểm tra dữ liệu ---------- */
-function fill(b, r, host) {
+/* Link công khai bị chặn: các dịch vụ rút gọn khác (tránh nối chuỗi), IP, localhost, tên miền nội bộ */
+const BLOCKED = /^(bit\.ly|tinyurl\.com|t\.co|goo\.gl|is\.gd|cutt\.ly|rb\.gy|shorturl\.at|ow\.ly|t\.ly|tiny\.cc|s\.id|bom\.so)$/i;
+function fill(b, r, host, strict = false) {
   if ("url" in b) {
-    const u = cleanUrl(b.url, host);
+    const u = cleanUrl(b.url, host, strict);
     if (!u) return "Link đích không hợp lệ (chỉ nhận http/https, không rút gọn link của chính trang này)";
     r.url = u;
   }
@@ -117,12 +133,15 @@ function fill(b, r, host) {
   if ("exp" in b) r.exp = b.exp ? +b.exp : null;
 }
 
-function cleanUrl(raw, host) {
+function cleanUrl(raw, host, strict) {
   raw = String(raw || "").trim();
   if (!/^[a-z][a-z\d+.-]*:/i.test(raw)) raw = "https://" + raw;
   try {
     const u = new URL(raw);
-    return /^https?:$/.test(u.protocol) && u.hostname !== host && u.href.length <= 2048 ? u.href : null;
+    const h = u.hostname;
+    if (!/^https?:$/.test(u.protocol) || h === host || u.href.length > 2048) return null;
+    if (strict && (!h.includes(".") || h.startsWith("[") || /^[\d.]+$/.test(h) || /\.(local|internal|lan)$/i.test(h) || BLOCKED.test(h))) return null;
+    return u.href;
   } catch { return null; }
 }
 
